@@ -185,7 +185,6 @@ def train(model, dataloader, optimizer, scheduler, loss_fn, device, epochs, chec
     loss_log = []
 
     if checkpoint_path:
-        # Use weights_only=True when loading the checkpoint
         checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -252,7 +251,7 @@ def train(model, dataloader, optimizer, scheduler, loss_fn, device, epochs, chec
 
 def inference(model, checkpoint_path, input_wav_path, output_instrumental_path, output_vocal_path,
               chunk_size=88200, overlap=44100, device='cpu', n_fft=4096, hop_length=1024):
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)  # Set weights_only=True
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
     model.load_state_dict(checkpoint['model_state_dict'], strict=False)
     model.eval()
     model.to(device)
