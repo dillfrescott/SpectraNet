@@ -183,7 +183,6 @@ def train(model, dataloader, optimizer, scheduler, loss_fn, device, epochs, chec
     step = 0
     avg_loss = 0.0
     loss_log = []
-    progress_bar = tqdm(total=epochs * len(dataloader))
 
     if checkpoint_path:
         # Use weights_only=True when loading the checkpoint
@@ -194,6 +193,9 @@ def train(model, dataloader, optimizer, scheduler, loss_fn, device, epochs, chec
         avg_loss = checkpoint['avg_loss']
         loss_log = checkpoint['loss_log']
         print(f"Resuming training from step {step} with average loss {avg_loss:.4f}")
+
+    # Initialize the progress bar after printing the resuming message
+    progress_bar = tqdm(total=epochs * len(dataloader))
 
     model.train()
     for epoch in range(epochs):
