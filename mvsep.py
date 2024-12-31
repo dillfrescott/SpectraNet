@@ -247,7 +247,7 @@ def train(model, dataloader, optimizer, scheduler, loss_fn, device, epochs, chec
     torch.save({'loss_log': loss_log}, 'loss_log.pt')
     progress_bar.close()
 
-def inference(model, checkpoint_path, input_wav_path, output_instrumental_path,
+def inference(model, checkpoint_path, input_wav_path, output_instrumental_path, output_vocal_path,
               chunk_size=88200, overlap=44100, device='cpu', n_fft=4096, hop_length=1024):
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'], strict=False)
@@ -262,6 +262,7 @@ def inference(model, checkpoint_path, input_wav_path, output_instrumental_path,
     total_length = input_audio.shape[1]
     num_chunks = (total_length - overlap) // (chunk_size - overlap)
     instrumentals = torch.zeros_like(input_audio)
+    vocals = torch.zeros_like(input_audio)
 
     cross_fade_length = overlap // 2
     window = torch.hann_window(n_fft).to(device)
@@ -293,9 +294,13 @@ def inference(model, checkpoint_path, input_wav_path, output_instrumental_path,
 
             inst_chunk = torch.istft(inst_spec, n_fft=n_fft, hop_length=hop_length, window=window, length=chunk_size, return_complex=False)
 
+            # Compute vocals by subtracting the instrumental from the original input
+            vocal_chunk = chunk - inst_chunk
+
             if i == 0:
                 # For the first chunk, don't apply cross-fading
                 instrumentals[:, i:i + chunk_size] = inst_chunk
+                vocals[:, i:i + chunk_size] = vocal_chunk
             else:
                 # Apply cross-fading for subsequent chunks
                 fade_in = torch.linspace(0, 1, cross_fade_length).to(device)
@@ -305,12 +310,20 @@ def inference(model, checkpoint_path, input_wav_path, output_instrumental_path,
                 instrumentals[:, i:i + cross_fade_length] *= fade_out
                 instrumentals[:, i:i + cross_fade_length] += inst_chunk[:, :cross_fade_length]
 
+                vocal_chunk[:, :cross_fade_length] *= fade_in
+                vocals[:, i:i + cross_fade_length] *= fade_out
+                vocals[:, i:i + cross_fade_length] += vocal_chunk[:, :cross_fade_length]
+
             instrumentals[:, i + cross_fade_length:i + chunk_size] = inst_chunk[:, cross_fade_length:]
+            vocals[:, i + cross_fade_length:i + chunk_size] = vocal_chunk[:, cross_fade_length:]
 
             pbar.update(1)
 
     instrumentals = torch.clamp(instrumentals, -1.0, 1.0)
+    vocals = torch.clamp(vocals, -1.0, 1.0)
+
     torchaudio.save(output_instrumental_path, instrumentals.cpu(), sr)
+    torchaudio.save(output_vocal_path, vocals.cpu(), sr)
 
 def main():
     parser = argparse.ArgumentParser(description='Train a model for instrumental separation')
@@ -324,6 +337,7 @@ def main():
     parser.add_argument('--checkpoint_path', type=str, default=None, help='Path to checkpoint to resume from')
     parser.add_argument('--input_wav', type=str, default=None, help='Path to input WAV file for inference')
     parser.add_argument('--output_instrumental', type=str, default='output_instrumental.wav', help='Path to output instrumental WAV file')
+    parser.add_argument('--output_vocal', type=str, default='output_vocal.wav', help='Path to output vocal WAV file')
     parser.add_argument('--segment_length', type=int, default=264600, help='Segment length for training')
     parser.add_argument('--num_layers', type=int, default=5, help='Number of layers in the CNN model')
     parser.add_argument('--n_fft', type=int, default=4096, help='Number of FFT bins for STFT')
@@ -348,7 +362,7 @@ def main():
             print("Please specify an input WAV file for inference using --input_wav")
             return
         model = UNetCNN(in_channels=2, hidden_size=256, num_layers=args.num_layers)
-        inference(model, args.checkpoint_path, args.input_wav, args.output_instrumental, device=device, n_fft=args.n_fft, hop_length=args.hop_length)
+        inference(model, args.checkpoint_path, args.input_wav, args.output_instrumental, args.output_vocal, device=device, n_fft=args.n_fft, hop_length=args.hop_length)
     else:
         print("Please specify either --train or --infer")
 
